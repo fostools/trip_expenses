@@ -1,0 +1,16 @@
+# Replay with: npm run simulate -- demo.txt
+@Kiran new trip Tahoe
+@Amy join {CODE}
+@Raj join {CODE}
+@Priya join {CODE}
+@Kiran cabin deposit 400
+@Kiran !confirm
+@Amy dinner 142 skip Raj
+@Amy !confirm
+@Priya gas 62.50 just me and Kiran
+@Priya !confirm
+@Raj Kiran paid 36 for firewood
+@Raj !confirm
+@Raj undo
+@Amy balance
+@Kiran settle

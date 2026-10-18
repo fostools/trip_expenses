@@ -1,0 +1,34 @@
+# Fly.io config. App names are global: change "tripex-app" if it's taken.
+app = "tripex-app"
+primary_region = "iad"
+
+[build]
+
+[env]
+  PORT = "8080"
+  DB_PATH = "/data/tripex.db"
+  RECEIPTS_DIR = "/data/receipts"
+
+# SQLite and receipt photos persist here across deploys.
+[mounts]
+  source = "tripex_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # Keep one machine running so WhatsApp webhooks never hit a cold start.
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    method = "GET"
+    path = "/health"
+
+[[vm]]
+  memory = "512mb"
+  cpu_kind = "shared"
+  cpus = 1
