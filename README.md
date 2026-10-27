@@ -27,6 +27,7 @@ Add `ANTHROPIC_API_KEY` to a `.env` file (copy `.env.example`) so Claude fills i
 5. **Fix:** any expense can be edited or deleted from its *Edit* link.
 6. **Settle:** the trip page always shows the fewest payments to square up.
 7. **Remove someone (trip owner only):** tap *Remove* next to their name, then confirm on a page that shows their email (or says there isn't one), so you know exactly who you're removing. It's blocked while they're on a saved expense, so balances never shift silently: edit or delete those first. Unsaved drafts they paid for are discarded, they're signed out everywhere, and their email can't rejoin or re-add them by emailing the trip.
+8. **Export (trip owner only):** *Export trip* at the bottom of the trip page downloads a .zip with every expense, receipt and person (with emails), who pays whom, CSVs for spreadsheets, and a `trip.json` designed for importing later. Format: [docs/EXPORT.md](docs/EXPORT.md).
 
 Anyone with a trip's link can view and join it, so treat it like the group chat itself. Receipts are the exception: they're locked behind a password (below). Pages are no-index and send no referrer. Set `CREATE_PIN` to require a code for starting new trips, so strangers can't run up your AI bill.
 
@@ -112,6 +113,7 @@ The same Dockerfile works on Railway or Render: attach a volume or disk at `/dat
 | `src/ledger.ts` | Cent-exact splits, balances, per-person totals, fewest-transfer settle-up |
 | `src/db.ts` | SQLite via Node's built-in `node:sqlite` |
 | `src/util.ts` | Trip links, receipt storage |
+| `src/export.ts`, `src/zip.ts` | Trip export: `trip.json` (format v1), CSVs, summary, receipts, zipped with built-in zlib |
 | `src/tools/receipt-password.ts` | Prints a trip's receipt password (`npm run receipt-password -- CODE`) |
 | `src/handler.ts`, `src/whatsapp.ts`, `src/simulate.ts` | WhatsApp bot channel (parked) and its terminal simulator |
 

@@ -240,6 +240,12 @@ export function tripPage(store: Store, trip: Trip, me: User, base?: string, rs: 
       <ul class="expenses" id="receipts">${expensesHtml}</ul>
     </section>
 
+    ${owner ? `<section aria-labelledby="h-export" id="export">
+      <h2 id="h-export">Export</h2>
+      <p class="hint">Download everything as a .zip: expenses, receipts, people with emails, and who pays whom, plus a trip.json file TripEx can import later. Only you see this.</p>
+      <p><a class="button small" href="/t/${trip.code}/export?${q(trip)}" download>Export trip</a></p>
+    </section>` : ""}
+
     <footer>Amounts are in US dollars. Anyone with this trip's link can view it and join, so share it only with the group.</footer>
     <script>
       document.querySelectorAll("[data-copy]").forEach(function (b) {

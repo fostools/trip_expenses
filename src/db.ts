@@ -20,6 +20,7 @@ export interface Trip {
   view_token: string; // secret in the trip link
   email_token: string; // secret part of the trip's email address
   receipt_pin: string; // password for opening receipts; only the creator sees it
+  created_at?: string;
 }
 export type ExpenseStatus = "pending" | "confirmed" | "cancelled" | "deleted";
 export interface Expense {
@@ -325,6 +326,13 @@ export class Store {
       .prepare(`SELECT * FROM expenses WHERE trip_id = ? AND created_by = ? AND status = 'confirmed'
                 ORDER BY id DESC LIMIT 1`)
       .get(tripId, phone) as Expense | undefined;
+  }
+
+  /** Saved expenses and unsaved drafts (not discarded or deleted), oldest first: what an export carries. */
+  exportableExpenses(tripId: number): Expense[] {
+    return this.db
+      .prepare("SELECT * FROM expenses WHERE trip_id = ? AND status IN ('confirmed', 'pending') ORDER BY id")
+      .all(tripId) as unknown as Expense[];
   }
 
   confirmedExpenses(tripId: number): Expense[] {

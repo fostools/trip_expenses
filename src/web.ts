@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { config } from "./config.js";
 import { createDraft } from "./drafts.js";
+import { tripExportZip } from "./export.js";
 import { hideEmails } from "./util.js";
 import type { Store, Trip, User } from "./db.js";
 import type { Share } from "./ledger.js";
@@ -361,6 +362,19 @@ export function webRouter(store: Store): Router {
     if (!isCreator(trip, currentMember(req, trip))) return res.sendStatus(403);
     store.resetReceiptPassword(trip.id);
     res.redirect(303, `${tripUrl(trip)}&pw=changed#receipt-password`);
+  });
+
+  // ---- trip owner downloads everything: trip.json (for a future import), CSVs, summary, receipts ----
+  r.get("/t/:code/export", (req, res) => {
+    const trip = authorize(req.params.code, req.query.k);
+    if (!trip) return page(res, notFoundPage(), 404);
+    if (!isCreator(trip, currentMember(req, trip))) return res.sendStatus(403);
+    const now = new Date();
+    const zip = tripExportZip(store, trip, now);
+    res.set("Cache-Control", "private, no-store");
+    res.set("Content-Type", "application/zip");
+    res.set("Content-Disposition", `attachment; filename="tripex-${trip.code}-${now.toISOString().slice(0, 10)}.zip"`);
+    res.send(zip);
   });
 
   // ---- trip owner removes someone: confirm page (shows their email), then the POST below ----
