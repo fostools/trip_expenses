@@ -180,7 +180,7 @@ export function tripPage(store: Store, trip: Trip, me: User, base?: string, rs: 
       return `<li class="person ${cls}">
         <div class="pname">${esc(m.name)}${m.phone === me.phone ? ' <span class="you">(you)</span>' : ""}${
           owner && m.phone !== trip.created_by
-            ? ` <form class="remove-person" method="post" action="/t/${trip.code}/people/${encodeURIComponent(m.phone)}/remove?${q(trip)}"><button type="submit" class="linkish" data-name="${esc(m.name)}" onclick="return confirm('Remove ' + this.dataset.name + ' from the trip? They will lose access, and emails from them will be ignored.')">Remove</button></form>`
+            ? ` <a class="remove-person" href="/t/${trip.code}/people/${encodeURIComponent(m.phone)}/remove?${q(trip)}">Remove</a>`
             : ""
         }</div>
         <div class="pstatus">${status}</div>
@@ -404,6 +404,27 @@ export function editPage(store: Store, trip: Trip, e: Expense, error?: string, r
   );
 }
 
+/** Trip owner only: confirm removing someone. The one place an email is shown, so the owner knows who it is. */
+export function removePage(trip: Trip, person: User, savedCount: number): string {
+  const back = `/t/${trip.code}?${q(trip)}#people`;
+  const email = person.email
+    ? `<p class="hint">Email on file</p><p class="confirm-email">${esc(person.email)}</p>`
+    : `<p class="confirm-email">No email on file for ${esc(person.name)}.</p><p class="hint">They were added from an expense and haven't opened the trip link yet.</p>`;
+  const body = savedCount
+    ? `<p class="error" role="alert">${esc(person.name)} is on ${savedCount} saved ${savedCount === 1 ? "expense" : "expenses"}. Edit or delete ${savedCount === 1 ? "it" : "those"} first so balances stay right, then remove them.</p>
+       <p><a class="button" href="${back}">Back to the trip</a></p>`
+    : `<p class="hint">They'll be signed out and lose access. Unsaved drafts they paid for are discarded, and emails from them will be ignored.</p>
+       <form method="post" action="/t/${trip.code}/people/${encodeURIComponent(person.phone)}/remove?${q(trip)}">
+         <button class="danger" type="submit">Remove ${esc(person.name)}</button>
+       </form>
+       <p class="hint"><a href="${back}">Cancel</a></p>`;
+  return layout(
+    `Remove ${person.name} · ${trip.name}`,
+    `<header><p class="brand"><a href="${back}">← ${esc(trip.name)}</a></p><h1>Remove ${esc(person.name)}?</h1></header>
+    <section class="panel">${email}${body}</section>`,
+  );
+}
+
 /** Someone opened a receipt link without the password (or without being on the trip). */
 export function lockedPage(trip: Trip, e: Expense, member: boolean): string {
   const back = member ? `/t/${trip.code}/e/${e.id}?${q(trip)}#unlock` : `/t/${trip.code}?${q(trip)}`;
@@ -518,9 +539,9 @@ img{display:block;max-width:100%;max-height:520px;margin-top:10px;border:1px sol
 .addr{font-weight:600;color:var(--ink);overflow-wrap:anywhere}
 .button.small{padding:7px 11px;font-size:.85rem}
 .inbox .expense{border-color:var(--rule)}
-.remove-person{display:inline;margin:0 0 0 6px}
-button.linkish{padding:0;border:0;background:none;color:var(--muted);font:400 .8rem/1 var(--text);text-decoration:underline;cursor:pointer}
-button.linkish:hover{color:var(--down)}
+.remove-person{margin-left:6px;color:var(--muted);font-weight:400;font-size:.8rem}
+.remove-person:hover{color:var(--down)}
+.confirm-email{margin:0;font-weight:600;overflow-wrap:anywhere}
 #people .hint{margin:0 0 8px}
 .pw{gap:10px}
 .pw-row{margin:0;display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}

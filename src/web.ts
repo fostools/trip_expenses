@@ -9,7 +9,7 @@ import { hideEmails } from "./util.js";
 import type { Store, Trip, User } from "./db.js";
 import type { Share } from "./ledger.js";
 import type { ReceiptState } from "./views.js";
-import { editPage, homePage, joinPage, lockedPage, notFoundPage, tripPage } from "./views.js";
+import { editPage, homePage, joinPage, lockedPage, notFoundPage, removePage, tripPage } from "./views.js";
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -361,6 +361,18 @@ export function webRouter(store: Store): Router {
     if (!isCreator(trip, currentMember(req, trip))) return res.sendStatus(403);
     store.resetReceiptPassword(trip.id);
     res.redirect(303, `${tripUrl(trip)}&pw=changed#receipt-password`);
+  });
+
+  // ---- trip owner removes someone: confirm page (shows their email), then the POST below ----
+  r.get("/t/:code/people/:id/remove", (req, res) => {
+    const trip = authorize(req.params.code, req.query.k);
+    if (!trip) return page(res, notFoundPage(), 404);
+    if (!isCreator(trip, currentMember(req, trip))) return res.sendStatus(403);
+    const id = String(req.params.id);
+    const person = id !== trip.created_by && store.isMember(trip.id, id) ? store.getUser(id) : undefined;
+    if (!person) return res.redirect(303, `${tripUrl(trip)}#people`);
+    res.set("Cache-Control", "private, no-store");
+    page(res, removePage(trip, person, store.savedExpensesWith(trip.id, id).length));
   });
 
   // ---- trip owner removes someone ----

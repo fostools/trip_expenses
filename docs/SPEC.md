@@ -24,7 +24,7 @@ TripEx runs as a single Node server with a SQLite database. Friends need no acco
 5. **Check.** Each draft opens on a review form: description, amount, who paid, who's in, and share weights. Save, discard, or later edit and delete.
 6. **Settle.** The trip page shows totals, each person's balance bar, and the fewest transfers to square up.
 7. **Unlock receipts.** Receipt files open only for the creator and for people who enter the trip's receipt password on their device.
-8. **Remove someone.** The trip owner can remove anyone but themselves. It's blocked while that person is on a saved expense, so balances never change silently. Unsaved drafts they paid for are discarded, they're dropped from other drafts, their devices are signed out, and their email can't rejoin or re-add them by emailing the trip.
+8. **Remove someone.** The trip owner can remove anyone but themselves, after a confirmation page that shows that person's email or says there's none on file. It's blocked while that person is on a saved expense, so balances never change silently. Unsaved drafts they paid for are discarded, they're dropped from other drafts, their devices are signed out, and their email can't rejoin or re-add them by emailing the trip.
 
 ## Architecture
 
@@ -94,7 +94,7 @@ The trip link is the main secret; receipts and the creator's identity sit behind
 | Creator sign-in | New device needs the creator's email and the receipt password |
 | Guessing | Wrong emails and passwords share a limit: 8 per device and 30 per trip every 15 minutes |
 | Receipt downloads | `Cache-Control: private, no-store`, `nosniff`; email copies served as plain text only |
-| Email addresses | Never shown in the app. Notes use names; stored email copies replace addresses with "[email hidden]"; logs mask them (`a***@gmail.com`) |
+| Email addresses | Never shown in the app, except one person's email to the trip owner on the remove confirmation page (not cached). Notes use names; stored email copies replace addresses with "[email hidden]"; logs mask them (`a***@gmail.com`) |
 | Inbound email | Resend webhooks verified with Svix HMAC and a 5-minute window; Postmark with a shared secret; 8-hex secret in each trip address |
 | Pages | `noindex`, `Referrer-Policy: no-referrer` so trip keys don't leak to other sites |
 | Secrets | API keys live only in Fly secrets; `deploy.sh` reads the Anthropic key without echoing it. No secrets in the code |
@@ -135,6 +135,7 @@ All trip routes need the link key (`?k=`); most also need a signed-in member.
 | POST | `/t/:code/e/:id` | Save, discard or delete | Members |
 | POST | `/t/:code/unlock` | Enter receipt password | Members |
 | POST | `/t/:code/receipt-password` | Pick a new receipt password | Creator |
+| GET | `/t/:code/people/:id/remove` | Confirm removal; shows their email | Creator |
 | POST | `/t/:code/people/:id/remove` | Remove someone from the trip | Creator |
 | GET | `/t/:code/r/:id` | Download a receipt file | Creator, or unlocked members |
 | POST | `/inbound/resend` | Resend email webhook | Svix-signed |
@@ -168,7 +169,7 @@ One always-on Fly.io machine (app `tripex-app`, region `iad`) with a 1 GB volume
 - **Deploy:** `bash deploy.sh` installs flyctl if needed, logs in, creates the app and volume, asks for the Anthropic key (hidden), sets secrets and a 6-digit access code, then runs `fly deploy --ha=false`. Safe to re-run; data is kept.
 - **Pages:** server-rendered HTML, no client framework. Bricolage Grotesque and IBM Plex Sans, sage and plum palette, dark mode.
 - **Backups:** Fly volume snapshots (`fly volumes snapshots list`).
-- **Tests:** ledger unit tests (`npm test`) plus end-to-end curl suites run against a real server with stand-ins for Claude and Resend: web flow, Postmark, Resend, people and replies, trip creation, named people, receipt password, removing people, and a privacy scan that crawls every page for email addresses. About 175 checks, all passing. The end-to-end suites aren't in this repo yet.
+- **Tests:** ledger unit tests (`npm test`) plus end-to-end curl suites run against a real server with stand-ins for Claude and Resend: web flow, Postmark, Resend, people and replies, trip creation, named people, receipt password, removing people, and a privacy scan that crawls every page for email addresses. About 190 checks, all passing. The end-to-end suites aren't in this repo yet.
 - **Not yet tested live from the build sandbox:** real Claude responses and real Resend delivery. Those are checked on the deployed app.
 
 | File | Role |

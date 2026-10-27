@@ -26,7 +26,7 @@ Add `ANTHROPIC_API_KEY` to a `.env` file (copy `.env.example`) so Claude fills i
 4. **Add:** type an expense, upload a receipt photo or PDF, or email the trip's address: forward a receipt, or just write "Dinner at Bell Tower for 199 dollars" in the subject or body. TripEx fills in the details, you check them, then save. Nothing counts until it's saved.
 5. **Fix:** any expense can be edited or deleted from its *Edit* link.
 6. **Settle:** the trip page always shows the fewest payments to square up.
-7. **Remove someone (trip owner only):** tap *Remove* next to their name. It's blocked while they're on a saved expense, so balances never shift silently: edit or delete those first. Unsaved drafts they paid for are discarded, they're signed out everywhere, and their email can't rejoin or re-add them by emailing the trip.
+7. **Remove someone (trip owner only):** tap *Remove* next to their name, then confirm on a page that shows their email (or says there isn't one), so you know exactly who you're removing. It's blocked while they're on a saved expense, so balances never shift silently: edit or delete those first. Unsaved drafts they paid for are discarded, they're signed out everywhere, and their email can't rejoin or re-add them by emailing the trip.
 
 Anyone with a trip's link can view and join it, so treat it like the group chat itself. Receipts are the exception: they're locked behind a password (below). Pages are no-index and send no referrer. Set `CREATE_PIN` to require a code for starting new trips, so strangers can't run up your AI bill.
 
@@ -47,7 +47,7 @@ Sign-in cookies are now signed, so nobody can pretend to be someone else by edit
 
 Each trip gets its own private address, shown on the trip page. Forward a receipt email there (PDF attached or not) and it shows up under **From email, waiting for a check**. Anyone on the trip can check it and save it.
 
-**Privacy:** people's email addresses are never shown in the app. Review notes use names only, the "Open the email" copy of a forwarded email has every address replaced with "[email hidden]", and server logs mask them (`a***@gmail.com`). The only address shown is the trip's own receiving address, so people can forward to it.
+**Privacy:** people's email addresses are never shown in the app, with one exception: the trip owner sees a person's email on the page confirming their removal. Review notes use names only, the "Open the email" copy of a forwarded email has every address replaced with "[email hidden]", and server logs mask them (`a***@gmail.com`). The only address shown is the trip's own receiving address, so people can forward to it.
 
 **Who sent it:** TripEx matches the sender by email (and by name for anyone who doesn't have an email yet). If there's no match, it adds them to the trip using the name on their email, but only if their email turned into an expense. Automated senders like `no-reply@…` are never added; their receipts are credited to the trip creator for a check.
 
