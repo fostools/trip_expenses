@@ -26,6 +26,7 @@ Add `ANTHROPIC_API_KEY` to a `.env` file (copy `.env.example`) so Claude fills i
 4. **Add:** type an expense, upload a receipt photo or PDF, or email the trip's address: forward a receipt, or just write "Dinner at Bell Tower for 199 dollars" in the subject or body. TripEx fills in the details, you check them, then save. Nothing counts until it's saved.
 5. **Fix:** any expense can be edited or deleted from its *Edit* link.
 6. **Settle:** the trip page always shows the fewest payments to square up.
+7. **Remove someone (trip owner only):** tap *Remove* next to their name. It's blocked while they're on a saved expense, so balances never shift silently: edit or delete those first. Unsaved drafts they paid for are discarded, they're signed out everywhere, and their email can't rejoin or re-add them by emailing the trip.
 
 Anyone with a trip's link can view and join it, so treat it like the group chat itself. Receipts are the exception: they're locked behind a password (below). Pages are no-index and send no referrer. Set `CREATE_PIN` to require a code for starting new trips, so strangers can't run up your AI bill.
 

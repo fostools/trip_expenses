@@ -69,6 +69,9 @@ export async function handleEmail(store: Store, mail: InboundMail) {
   const trip = findTrip(store, mail.recipients);
   if (!trip) return console.warn(`inbound email for no trip (to: ${mail.recipients.join(", ")})`);
 
+  if (mail.fromEmail && store.wasRemoved(trip.id, mail.fromEmail)) {
+    return console.log(`inbound email from someone removed from ${trip.code} (${maskEmail(mail.fromEmail)}): ignored`);
+  }
   const automated = isAutomated(mail.fromEmail);
   const who = resolveSender(store, trip, mail.fromName, mail.fromEmail, automated);
   // Only the sender's display name is ever shown in the app, never their address.

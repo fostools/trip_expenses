@@ -98,6 +98,8 @@ function migrate(db: DatabaseSync) {
   if (!has("users", "email")) db.exec("ALTER TABLE users ADD COLUMN email TEXT");
   if (!has("trips", "receipt_pin")) db.exec("ALTER TABLE trips ADD COLUMN receipt_pin TEXT");
   db.exec("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
+  // Emails of people the trip owner removed, so their emails don't quietly add them back.
+  db.exec("CREATE TABLE IF NOT EXISTS removed_emails (trip_id INTEGER NOT NULL, email TEXT NOT NULL, PRIMARY KEY (trip_id, email))");
   // Existing trips get a receipt password too.
   const missing = db.prepare("SELECT id FROM trips WHERE receipt_pin IS NULL").all() as { id: number }[];
   for (const t of missing) db.prepare("UPDATE trips SET receipt_pin = ? WHERE id = ?").run(newReceiptPassword(), t.id);
@@ -209,6 +211,44 @@ export class Store {
   /** Take someone off a trip (only used to undo an automatic add that turned out to be unneeded). */
   removeMember(tripId: number, phone: string) {
     this.db.prepare("DELETE FROM members WHERE trip_id = ? AND phone = ?").run(tripId, phone);
+  }
+
+  /** Saved expenses this person paid for or shares in. Removing them would change everyone's balances. */
+  savedExpensesWith(tripId: number, phone: string): Expense[] {
+    return this.db
+      .prepare(`SELECT * FROM expenses e WHERE e.trip_id = ? AND e.status = 'confirmed'
+                AND (e.payer = ? OR EXISTS (SELECT 1 FROM shares s WHERE s.expense_id = e.id AND s.phone = ? AND s.weight > 0))
+                ORDER BY e.id`)
+      .all(tripId, phone, phone) as unknown as Expense[];
+  }
+
+  /**
+   * Take someone off a trip (the owner's call). Drafts they paid for are discarded, they're dropped from
+   * other drafts, and their email is remembered so it can't rejoin or re-add them. Returns drafts discarded.
+   */
+  removePerson(tripId: number, phone: string): number {
+    const user = this.getUser(phone);
+    this.db.exec("BEGIN");
+    try {
+      const dropped = this.db
+        .prepare("UPDATE expenses SET status = 'cancelled' WHERE trip_id = ? AND status = 'pending' AND payer = ?")
+        .run(tripId, phone).changes;
+      this.db
+        .prepare(`DELETE FROM shares WHERE phone = ? AND expense_id IN
+                  (SELECT id FROM expenses WHERE trip_id = ? AND status = 'pending')`)
+        .run(phone, tripId);
+      this.removeMember(tripId, phone);
+      if (user?.email) this.db.prepare("INSERT OR IGNORE INTO removed_emails (trip_id, email) VALUES (?, ?)").run(tripId, user.email.toLowerCase());
+      this.db.exec("COMMIT");
+      return Number(dropped);
+    } catch (err) {
+      this.db.exec("ROLLBACK");
+      throw err;
+    }
+  }
+
+  wasRemoved(tripId: number, email: string): boolean {
+    return Boolean(this.db.prepare("SELECT 1 FROM removed_emails WHERE trip_id = ? AND email = ?").get(tripId, email.trim().toLowerCase()));
   }
 
   members(tripId: number): User[] {

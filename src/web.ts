@@ -193,7 +193,7 @@ export function webRouter(store: Store): Router {
     if (!trip) return page(res, notFoundPage(), 404);
     const me = currentMember(req, trip, res);
     if (!me) return page(res, joinPage(trip, store.members(trip.id), undefined, safeNext(trip, req.query.next)));
-    page(res, tripPage(store, trip, me, `${req.protocol}://${req.get("host")}`, receiptState(req, trip, me)));
+    page(res, tripPage(store, trip, me, `${req.protocol}://${req.get("host")}`, receiptState(req, trip, me), typeof req.query.pm === "string" ? req.query.pm.slice(0, 300) : undefined));
   });
 
   r.post("/t/:code/join", (req, res) => {
@@ -235,6 +235,7 @@ export function webRouter(store: Store): Router {
       const name = String(req.body.name ?? "").trim().slice(0, 30);
       if (!name || !typed) return again("Add your name and email to join.");
       if (!email) return again("That email doesn't look right.");
+      if (store.wasRemoved(trip.id, email)) return again(`The trip's owner removed this email from ${trip.name}. Ask them if that was a mistake.`);
       const byEmail = store.memberByEmail(trip.id, email);
       const taken = members.find((m) => m.name.toLowerCase() === name.toLowerCase());
       // Same check as tapping the creator's name.
@@ -360,6 +361,25 @@ export function webRouter(store: Store): Router {
     if (!isCreator(trip, currentMember(req, trip))) return res.sendStatus(403);
     store.resetReceiptPassword(trip.id);
     res.redirect(303, `${tripUrl(trip)}&pw=changed#receipt-password`);
+  });
+
+  // ---- trip owner removes someone ----
+  r.post("/t/:code/people/:id/remove", (req, res) => {
+    const trip = authorize(req.params.code, req.query.k);
+    if (!trip) return page(res, notFoundPage(), 404);
+    if (!isCreator(trip, currentMember(req, trip))) return res.sendStatus(403);
+    const id = String(req.params.id);
+    const back = (msg: string) => res.redirect(303, `${tripUrl(trip)}&pm=${encodeURIComponent(msg)}#people`);
+    if (id === trip.created_by) return back("You started this trip, so you can't remove yourself.");
+    const person = store.isMember(trip.id, id) ? store.getUser(id) : undefined;
+    if (!person) return back("That person isn't on this trip anymore.");
+    const saved = store.savedExpensesWith(trip.id, id);
+    if (saved.length) {
+      const n = saved.length;
+      return back(`${person.name} is on ${n} saved ${n === 1 ? "expense" : "expenses"}. Edit or delete ${n === 1 ? "it" : "those"} first so balances stay right, then remove them.`);
+    }
+    const dropped = store.removePerson(trip.id, id);
+    back(`Removed ${person.name} from the trip.${dropped ? ` ${dropped} unsaved ${dropped === 1 ? "draft" : "drafts"} they paid for ${dropped === 1 ? "was" : "were"} discarded.` : ""}`);
   });
 
   // ---- receipt files (photos, PDFs, emails): members who know the receipt password ----

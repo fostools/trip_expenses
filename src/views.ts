@@ -145,7 +145,8 @@ export function joinPage(trip: Trip, members: User[], error?: string, next?: str
 
 // ---------------- trip ----------------
 
-export function tripPage(store: Store, trip: Trip, me: User, base?: string, rs: ReceiptState = { unlocked: true, creator: "" }): string {
+export function tripPage(store: Store, trip: Trip, me: User, base?: string, rs: ReceiptState = { unlocked: true, creator: "" }, peopleMessage?: string): string {
+  const owner = me.phone === trip.created_by;
   const members = store.members(trip.id);
   const name = new Map(members.map((m) => [m.phone, m.name]));
   const expenses = store.confirmedExpenses(trip.id);
@@ -177,7 +178,11 @@ export function tripPage(store: Store, trip: Trip, me: User, base?: string, rs: 
       const status = n > 0 ? `gets back ${usd(n)}` : n < 0 ? `owes ${usd(-n)}` : "even";
       const cls = n > 0 ? "up" : n < 0 ? "down" : "flat";
       return `<li class="person ${cls}">
-        <div class="pname">${esc(m.name)}${m.phone === me.phone ? ' <span class="you">(you)</span>' : ""}</div>
+        <div class="pname">${esc(m.name)}${m.phone === me.phone ? ' <span class="you">(you)</span>' : ""}${
+          owner && m.phone !== trip.created_by
+            ? ` <form class="remove-person" method="post" action="/t/${trip.code}/people/${encodeURIComponent(m.phone)}/remove?${q(trip)}"><button type="submit" class="linkish" data-name="${esc(m.name)}" onclick="return confirm('Remove ' + this.dataset.name + ' from the trip? They will lose access, and emails from them will be ignored.')">Remove</button></form>`
+            : ""
+        }</div>
         <div class="pstatus">${status}</div>
         <div class="bar" aria-hidden="true"><span style="width:${pct}%"></span></div>
         <div class="pmeta">Paid ${usd(t.paid)}, share ${usd(t.share)}</div>
@@ -223,8 +228,9 @@ export function tripPage(store: Store, trip: Trip, me: User, base?: string, rs: 
       ${settleHtml}
     </section>
 
-    <section aria-labelledby="h-people">
+    <section aria-labelledby="h-people" id="people">
       <h2 id="h-people">People</h2>
+      ${peopleMessage ? `<p class="hint" role="status">${esc(peopleMessage)}</p>` : ""}
       <ul class="people">${peopleHtml}</ul>
     </section>
 
@@ -512,6 +518,10 @@ img{display:block;max-width:100%;max-height:520px;margin-top:10px;border:1px sol
 .addr{font-weight:600;color:var(--ink);overflow-wrap:anywhere}
 .button.small{padding:7px 11px;font-size:.85rem}
 .inbox .expense{border-color:var(--rule)}
+.remove-person{display:inline;margin:0 0 0 6px}
+button.linkish{padding:0;border:0;background:none;color:var(--muted);font:400 .8rem/1 var(--text);text-decoration:underline;cursor:pointer}
+button.linkish:hover{color:var(--down)}
+#people .hint{margin:0 0 8px}
 .pw{gap:10px}
 .pw-row{margin:0;display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}
 .pw-code{font:600 1.25rem/1.2 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.02em;overflow-wrap:anywhere}

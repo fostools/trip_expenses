@@ -24,6 +24,7 @@ TripEx runs as a single Node server with a SQLite database. Friends need no acco
 5. **Check.** Each draft opens on a review form: description, amount, who paid, who's in, and share weights. Save, discard, or later edit and delete.
 6. **Settle.** The trip page shows totals, each person's balance bar, and the fewest transfers to square up.
 7. **Unlock receipts.** Receipt files open only for the creator and for people who enter the trip's receipt password on their device.
+8. **Remove someone.** The trip owner can remove anyone but themselves. It's blocked while that person is on a saved expense, so balances never change silently. Unsaved drafts they paid for are discarded, they're dropped from other drafts, their devices are signed out, and their email can't rejoin or re-add them by emailing the trip.
 
 ## Architecture
 
@@ -112,6 +113,7 @@ SQLite via Node's built-in `node:sqlite`. Money is stored in integer cents. A mi
 | expenses | payer, amount_cents, description, source, status, items, receipt_file, note, created_by | Source: text, receipt, email. Status: pending, confirmed, cancelled, deleted |
 | shares | expense_id, user id, weight | Weight 0 means sat out; 2 means covering two people |
 | settings | key, value | Holds the cookie-signing secret and when signed cookies started |
+| removed_emails | trip_id, email | People the owner removed; their emails are ignored and can't rejoin |
 
 - **Splits:** weighted, with largest-remainder rounding so shares always add up to the exact cent total.
 - **Settle-up:** net balances, then a greedy match of biggest debtor to biggest creditor for the fewest transfers.
@@ -133,6 +135,7 @@ All trip routes need the link key (`?k=`); most also need a signed-in member.
 | POST | `/t/:code/e/:id` | Save, discard or delete | Members |
 | POST | `/t/:code/unlock` | Enter receipt password | Members |
 | POST | `/t/:code/receipt-password` | Pick a new receipt password | Creator |
+| POST | `/t/:code/people/:id/remove` | Remove someone from the trip | Creator |
 | GET | `/t/:code/r/:id` | Download a receipt file | Creator, or unlocked members |
 | POST | `/inbound/resend` | Resend email webhook | Svix-signed |
 | POST | `/inbound/postmark` | Postmark email webhook | Shared secret |
@@ -165,7 +168,7 @@ One always-on Fly.io machine (app `tripex-app`, region `iad`) with a 1 GB volume
 - **Deploy:** `bash deploy.sh` installs flyctl if needed, logs in, creates the app and volume, asks for the Anthropic key (hidden), sets secrets and a 6-digit access code, then runs `fly deploy --ha=false`. Safe to re-run; data is kept.
 - **Pages:** server-rendered HTML, no client framework. Bricolage Grotesque and IBM Plex Sans, sage and plum palette, dark mode.
 - **Backups:** Fly volume snapshots (`fly volumes snapshots list`).
-- **Tests:** ledger unit tests (`npm test`) plus end-to-end curl suites run against a real server with stand-ins for Claude and Resend: web flow, Postmark, Resend, people and replies, trip creation, named people, receipt password, and a privacy scan that crawls every page for email addresses. About 150 checks, all passing. The end-to-end suites aren't in this repo yet.
+- **Tests:** ledger unit tests (`npm test`) plus end-to-end curl suites run against a real server with stand-ins for Claude and Resend: web flow, Postmark, Resend, people and replies, trip creation, named people, receipt password, removing people, and a privacy scan that crawls every page for email addresses. About 175 checks, all passing. The end-to-end suites aren't in this repo yet.
 - **Not yet tested live from the build sandbox:** real Claude responses and real Resend delivery. Those are checked on the deployed app.
 
 | File | Role |
