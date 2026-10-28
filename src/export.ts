@@ -35,6 +35,8 @@ export interface TripExportV1 {
     receipt: { file: string; type: string } | null;
   }[];
   balances: { person: string; paid_cents: number; share_cents: number; net_cents: number }[];
+  /** Settle-up payments already made, as marked by the trip owner. Added within version 1; may be absent in older files. */
+  payments?: { from: string; to: string; amount_cents: number; paid_at: string }[];
   settle_up: { from: string; to: string; amount_cents: number }[];
 }
 
@@ -103,7 +105,9 @@ export function buildTripExport(store: Store, trip: Trip, now = new Date()): { j
 
   // Balances and settle-up come from saved expenses only, exactly as the trip page shows them.
   const ledger = store.ledger(trip.id);
-  const net = netBalances(ledger);
+  const payments = store.payments(trip.id);
+  for (const p of payments) for (const uid of [p.from_id, p.to_id]) if (!ids.has(uid)) addPerson(store.getUser(uid), false);
+  const net = netBalances(store.balanceLedger(trip.id)); // after payments already made
   const totals = personTotals(ledger);
   const balances = members.map((m) => {
     const t = totals.get(m.phone) ?? { paid: 0, share: 0 };
@@ -120,6 +124,7 @@ export function buildTripExport(store: Store, trip: Trip, now = new Date()): { j
     people,
     expenses: out,
     balances,
+    payments: payments.map((p) => ({ from: pid(p.from_id), to: pid(p.to_id), amount_cents: p.amount_cents, paid_at: iso(p.created_at)! })),
     settle_up: settle,
   };
   return { json, files };
@@ -147,7 +152,13 @@ export function tripExportZip(store: Store, trip: Trip, now = new Date()): Buffe
       e.status, who(e.added_by), e.source, e.receipt?.file ?? "",
     ]),
   );
-  const settleCsv = csv(["From", "To", "Amount (USD)"], json.settle_up.map((t) => [who(t.from), who(t.to), usd(t.amount_cents)]));
+  const settleCsv = csv(
+    ["From", "To", "Amount (USD)", "Status", "Paid on (UTC)"],
+    [
+      ...json.settle_up.map((t) => [who(t.from), who(t.to), usd(t.amount_cents), "to pay", ""]),
+      ...(json.payments ?? []).map((p) => [who(p.from), who(p.to), usd(p.amount_cents), "paid", p.paid_at.slice(0, 10)]),
+    ],
+  );
 
   const saved = json.expenses.filter((e) => e.status === "saved");
   const drafts = json.expenses.length - saved.length;
@@ -159,7 +170,8 @@ export function tripExportZip(store: Store, trip: Trip, now = new Date()): Buffe
     `${saved.length} saved ${saved.length === 1 ? "expense" : "expenses"}, ${formatMoney(total)} total.${drafts ? ` ${drafts} unsaved ${drafts === 1 ? "draft" : "drafts"} not counted.` : ""}`,
     "",
     "Who pays whom",
-    ...(json.settle_up.length ? json.settle_up.map((t) => `  ${who(t.from)} pays ${who(t.to)} ${formatMoney(t.amount_cents)}`) : ["  Everyone is even."]),
+    ...(json.settle_up.length ? json.settle_up.map((t) => `  ${who(t.from)} pays ${who(t.to)} ${formatMoney(t.amount_cents)}`) : [json.payments?.length ? "  Everyone is settled up." : "  Everyone is even."]),
+    ...(json.payments?.length ? ["", "Already paid", ...json.payments.map((p) => `  ${who(p.from)} paid ${who(p.to)} ${formatMoney(p.amount_cents)} on ${p.paid_at.slice(0, 10)}`)] : []),
     "",
     "People",
     ...json.balances.map((b) => {
@@ -171,7 +183,7 @@ export function tripExportZip(store: Store, trip: Trip, now = new Date()): Buffe
     "  trip.json      everything, for re-importing later (format described in docs/EXPORT.md)",
     "  expenses.csv   one row per expense",
     "  people.csv     people, emails and balances",
-    "  settle-up.csv  who pays whom",
+    "  settle-up.csv  who pays whom, and payments already made",
     "  receipts/      receipt photos, PDFs and emails, named by expense",
     "",
     "This file contains people's emails and receipts. Share it carefully.",

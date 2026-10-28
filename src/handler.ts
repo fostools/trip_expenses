@@ -215,7 +215,7 @@ export class Bot {
   // ---------- balances ----------
 
   private async showBalance(user: User, trip: Trip) {
-    const net = netBalances(this.store.ledger(trip.id));
+    const net = netBalances(this.store.balanceLedger(trip.id));
     const members = this.store.members(trip.id);
     const total = this.store.confirmedExpenses(trip.id).reduce((s, e) => s + e.amount_cents, 0);
     const lines = members.map((m) => {
@@ -229,7 +229,7 @@ export class Bot {
 
   private async showSettle(user: User, trip: Trip) {
     const names = new Map(this.store.members(trip.id).map((m) => [m.phone, m.name]));
-    const transfers = settleUp(netBalances(this.store.ledger(trip.id)));
+    const transfers = settleUp(netBalances(this.store.balanceLedger(trip.id)));
     if (!transfers.length) return this.wa.sendText(user.phone, "Everyone's even. Nothing to settle 🎉");
     const lines = transfers.map((t) => `• ${names.get(t.from)} → ${names.get(t.to)}: ${usd(t.amountCents)}`);
     const text = `*Settle up ${trip.name}* (${transfers.length} payment${transfers.length > 1 ? "s" : ""})\n${lines.join("\n")}\n\nPay with Venmo, Zelle, PayPal or cash.\nEvery expense: ${dashboardLink(trip)}`;

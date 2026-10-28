@@ -22,6 +22,15 @@ export interface Trip {
   receipt_pin: string; // password for opening receipts; only the creator sees it
   created_at?: string;
 }
+export interface Payment {
+  id: number;
+  trip_id: number;
+  from_id: string;
+  to_id: string;
+  amount_cents: number;
+  marked_by: string;
+  created_at: string;
+}
 export type ExpenseStatus = "pending" | "confirmed" | "cancelled" | "deleted";
 export interface Expense {
   id: number;
@@ -99,6 +108,16 @@ function migrate(db: DatabaseSync) {
   if (!has("users", "email")) db.exec("ALTER TABLE users ADD COLUMN email TEXT");
   if (!has("trips", "receipt_pin")) db.exec("ALTER TABLE trips ADD COLUMN receipt_pin TEXT");
   db.exec("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
+  // Settle-up payments the trip owner marked as paid: "from" paid "to" this much.
+  db.exec(`CREATE TABLE IF NOT EXISTS payments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    trip_id INTEGER NOT NULL REFERENCES trips(id),
+    from_id TEXT NOT NULL,
+    to_id TEXT NOT NULL,
+    amount_cents INTEGER NOT NULL,
+    marked_by TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`);
   // Emails of people the trip owner removed, so their emails don't quietly add them back.
   db.exec("CREATE TABLE IF NOT EXISTS removed_emails (trip_id INTEGER NOT NULL, email TEXT NOT NULL, PRIMARY KEY (trip_id, email))");
   // Existing trips get a receipt password too.
@@ -339,6 +358,34 @@ export class Store {
     return this.db
       .prepare("SELECT * FROM expenses WHERE trip_id = ? AND status = 'confirmed' ORDER BY id")
       .all(tripId) as unknown as Expense[];
+  }
+
+  payments(tripId: number): Payment[] {
+    return this.db.prepare("SELECT * FROM payments WHERE trip_id = ? ORDER BY id").all(tripId) as unknown as Payment[];
+  }
+
+  addPayment(tripId: number, from: string, to: string, amountCents: number, markedBy: string): Payment {
+    const r = this.db
+      .prepare("INSERT INTO payments (trip_id, from_id, to_id, amount_cents, marked_by) VALUES (?, ?, ?, ?, ?)")
+      .run(tripId, from, to, amountCents, markedBy);
+    return this.db.prepare("SELECT * FROM payments WHERE id = ?").get(Number(r.lastInsertRowid)) as unknown as Payment;
+  }
+
+  deletePayment(tripId: number, id: number): boolean {
+    return Number(this.db.prepare("DELETE FROM payments WHERE trip_id = ? AND id = ?").run(tripId, id).changes) > 0;
+  }
+
+  paymentsWith(tripId: number, phone: string): number {
+    return Number((this.db.prepare("SELECT count(*) AS n FROM payments WHERE trip_id = ? AND (from_id = ? OR to_id = ?)").get(tripId, phone, phone) as { n: number }).n);
+  }
+
+  /** Expenses plus recorded payments: what balances and settle-up are computed from. A payment from X to Y
+   *  is an entry X paid that only Y shares, which moves X up and Y down by the amount. */
+  balanceLedger(tripId: number): LedgerExpense[] {
+    return [
+      ...this.ledger(tripId),
+      ...this.payments(tripId).map((p) => ({ payer: p.from_id, amountCents: p.amount_cents, shares: [{ phone: p.to_id, weight: 1 }] })),
+    ];
   }
 
   ledger(tripId: number): LedgerExpense[] {

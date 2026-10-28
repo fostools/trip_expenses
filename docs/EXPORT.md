@@ -8,7 +8,7 @@ The trip owner can download a trip from the trip page (**Export trip**). The dow
 | `summary.txt` | Totals, who pays whom, and each person's balance, in plain words |
 | `expenses.csv` | One row per expense, for spreadsheets |
 | `people.csv` | People, emails and balances |
-| `settle-up.csv` | Who pays whom |
+| `settle-up.csv` | Who still pays whom, and payments already made |
 | `receipts/` | Receipt photos, PDFs and saved email text, named `e<N>-<description>.<ext>` |
 
 The zip holds people's emails and receipts, which is why only the trip owner can download it.
@@ -46,10 +46,11 @@ The zip holds people's emails and receipts, which is why only the trip owner can
     }
   ],
   "balances": [
-    { "person": "p1", "paid_cents": 9000, "share_cents": 4500, "net_cents": 4500 },
-    { "person": "p2", "paid_cents": 0, "share_cents": 4500, "net_cents": -4500 }
+    { "person": "p1", "paid_cents": 9000, "share_cents": 4500, "net_cents": 2500 },
+    { "person": "p2", "paid_cents": 0, "share_cents": 4500, "net_cents": -2500 }
   ],
-  "settle_up": [{ "from": "p2", "to": "p1", "amount_cents": 4500 }]
+  "payments": [{ "from": "p2", "to": "p1", "amount_cents": 2000, "paid_at": "2026-10-28T15:00:00Z" }],
+  "settle_up": [{ "from": "p2", "to": "p1", "amount_cents": 2500 }]
 }
 ```
 
@@ -64,7 +65,8 @@ The zip holds people's emails and receipts, which is why only the trip owner can
 - **`split`** lists only people who are in (weight above 0). `weight` is the share count (2 means covering two people). `share_cents` is the exact cents that person owes, summing to `amount_cents`.
 - **`source`** is how the expense came in: `text`, `receipt` (photo or PDF upload) or `email`.
 - **`receipt.file`** is the path of the receipt inside the zip, or `receipt` is `null`.
-- **`balances` and `settle_up`** are computed from saved expenses only, as the trip page shows them. They're for reading; an importer should recompute them from the expenses rather than trust them.
+- **`payments`** are settle-up payments the trip owner marked as made: `from` paid `to`. Added within version 1, so older files may not have it; treat a missing list as empty.
+- **`balances` and `settle_up`** are computed from saved expenses and `payments`, as the trip page shows them. `paid_cents` and `share_cents` count expenses only; `net_cents` also counts payments. They're for reading; an importer should recompute them from the expenses and payments rather than trust them.
 - **Not exported:** the trip link's secret key, the receipt password and the trip's email address. An import creates a new trip with new ones.
 
 ### Importing later (notes for the importer)
@@ -73,4 +75,5 @@ The zip holds people's emails and receipts, which is why only the trip owner can
 2. Create a trip with `trip.name` and new secrets. The importing person becomes the owner, or the `owner: true` person if their email matches.
 3. Create people, keeping a map from `p<N>` to the new user ids. Re-apply emails so email receipts keep matching.
 4. Create expenses with their status, payer, split weights, items and note, and copy each receipt file into receipt storage.
-5. Recompute balances, and compare them with `balances` as a check.
+5. Re-create `payments`.
+6. Recompute balances, and compare them with `balances` as a check.

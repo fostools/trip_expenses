@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { config } from "./config.js";
 import { createDraft } from "./drafts.js";
+import { netBalances, settleUp } from "./ledger.js";
 import { tripExportZip } from "./export.js";
 import { hideEmails } from "./util.js";
 import type { Store, Trip, User } from "./db.js";
@@ -194,7 +195,7 @@ export function webRouter(store: Store): Router {
     if (!trip) return page(res, notFoundPage(), 404);
     const me = currentMember(req, trip, res);
     if (!me) return page(res, joinPage(trip, store.members(trip.id), undefined, safeNext(trip, req.query.next)));
-    page(res, tripPage(store, trip, me, `${req.protocol}://${req.get("host")}`, receiptState(req, trip, me), typeof req.query.pm === "string" ? req.query.pm.slice(0, 300) : undefined));
+    page(res, tripPage(store, trip, me, `${req.protocol}://${req.get("host")}`, receiptState(req, trip, me), typeof req.query.pm === "string" ? req.query.pm.slice(0, 300) : undefined, typeof req.query.sm === "string" ? req.query.sm.slice(0, 300) : undefined));
   });
 
   r.post("/t/:code/join", (req, res) => {
@@ -364,6 +365,30 @@ export function webRouter(store: Store): Router {
     res.redirect(303, `${tripUrl(trip)}&pw=changed#receipt-password`);
   });
 
+  // ---- trip owner marks a settle-up payment as made (or undoes it) ----
+  r.post("/t/:code/settle/pay", (req, res) => {
+    const trip = authorize(req.params.code, req.query.k);
+    if (!trip) return page(res, notFoundPage(), 404);
+    const me = currentMember(req, trip);
+    if (!isCreator(trip, me)) return res.sendStatus(403);
+    const back = (msg?: string) => res.redirect(303, `${tripUrl(trip)}${msg ? `&sm=${encodeURIComponent(msg)}` : ""}#settle`);
+    const from = String(req.body.from ?? ""), to = String(req.body.to ?? ""), amount = Number(req.body.amount);
+    // Only a line that's on settle-up right now, for the amount the owner saw.
+    const line = settleUp(netBalances(store.balanceLedger(trip.id))).find((t) => t.from === from && t.to === to);
+    if (!line) return back("That payment isn't on settle-up anymore. Check the list again.");
+    if (line.amountCents !== amount) return back("Balances changed since you loaded the page. Check the amount and try again.");
+    store.addPayment(trip.id, from, to, line.amountCents, me!.phone);
+    back();
+  });
+
+  r.post("/t/:code/settle/undo/:id", (req, res) => {
+    const trip = authorize(req.params.code, req.query.k);
+    if (!trip) return page(res, notFoundPage(), 404);
+    if (!isCreator(trip, currentMember(req, trip))) return res.sendStatus(403);
+    store.deletePayment(trip.id, Number(req.params.id));
+    res.redirect(303, `${tripUrl(trip)}#settle`);
+  });
+
   // ---- trip owner downloads everything: trip.json (for a future import), CSVs, summary, receipts ----
   r.get("/t/:code/export", (req, res) => {
     const trip = authorize(req.params.code, req.query.k);
@@ -377,6 +402,19 @@ export function webRouter(store: Store): Router {
     res.send(zip);
   });
 
+  /** Why someone can't be removed yet (they're part of the money), or undefined if they can. */
+  const removeBlocker = (trip: Trip, person: User): string | undefined => {
+    const n = store.savedExpensesWith(trip.id, person.phone).length;
+    const p = store.paymentsWith(trip.id, person.phone);
+    if (!n && !p) return undefined;
+    const parts = [
+      n ? `${n} saved ${n === 1 ? "expense" : "expenses"}` : "",
+      p ? `${p} recorded ${p === 1 ? "payment" : "payments"}` : "",
+    ].filter(Boolean).join(" and ");
+    const fix = n && p ? "Edit or delete the expenses and undo the payments" : n ? `Edit or delete ${n === 1 ? "it" : "those"}` : `Undo ${p === 1 ? "it" : "those"} in Settle up`;
+    return `${person.name} is on ${parts}. ${fix} first so balances stay right, then remove them.`;
+  };
+
   // ---- trip owner removes someone: confirm page (shows their email), then the POST below ----
   r.get("/t/:code/people/:id/remove", (req, res) => {
     const trip = authorize(req.params.code, req.query.k);
@@ -386,7 +424,7 @@ export function webRouter(store: Store): Router {
     const person = id !== trip.created_by && store.isMember(trip.id, id) ? store.getUser(id) : undefined;
     if (!person) return res.redirect(303, `${tripUrl(trip)}#people`);
     res.set("Cache-Control", "private, no-store");
-    page(res, removePage(trip, person, store.savedExpensesWith(trip.id, id).length));
+    page(res, removePage(trip, person, removeBlocker(trip, person)));
   });
 
   // ---- trip owner removes someone ----
@@ -399,11 +437,8 @@ export function webRouter(store: Store): Router {
     if (id === trip.created_by) return back("You started this trip, so you can't remove yourself.");
     const person = store.isMember(trip.id, id) ? store.getUser(id) : undefined;
     if (!person) return back("That person isn't on this trip anymore.");
-    const saved = store.savedExpensesWith(trip.id, id);
-    if (saved.length) {
-      const n = saved.length;
-      return back(`${person.name} is on ${n} saved ${n === 1 ? "expense" : "expenses"}. Edit or delete ${n === 1 ? "it" : "those"} first so balances stay right, then remove them.`);
-    }
+    const blocker = removeBlocker(trip, person);
+    if (blocker) return back(blocker);
     const dropped = store.removePerson(trip.id, id);
     back(`Removed ${person.name} from the trip.${dropped ? ` ${dropped} unsaved ${dropped === 1 ? "draft" : "drafts"} they paid for ${dropped === 1 ? "was" : "were"} discarded.` : ""}`);
   });

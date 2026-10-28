@@ -145,31 +145,54 @@ export function joinPage(trip: Trip, members: User[], error?: string, next?: str
 
 // ---------------- trip ----------------
 
-export function tripPage(store: Store, trip: Trip, me: User, base?: string, rs: ReceiptState = { unlocked: true, creator: "" }, peopleMessage?: string): string {
+export function tripPage(store: Store, trip: Trip, me: User, base?: string, rs: ReceiptState = { unlocked: true, creator: "" }, peopleMessage?: string, settleMessage?: string): string {
   const owner = me.phone === trip.created_by;
   const members = store.members(trip.id);
   const name = new Map(members.map((m) => [m.phone, m.name]));
   const expenses = store.confirmedExpenses(trip.id);
   const ledger = store.ledger(trip.id);
-  const net = netBalances(ledger);
-  const totals = personTotals(ledger);
+  const payments = store.payments(trip.id);
+  const net = netBalances(store.balanceLedger(trip.id)); // expenses plus payments already made
+  const totals = personTotals(ledger); // what each person paid for and their share, expenses only
   const transfers = settleUp(net);
   const spent = expenses.reduce((s, e) => s + e.amount_cents, 0);
   const maxNet = Math.max(1, ...[...net.values()].map(Math.abs));
   const link = tripLink(trip, base);
   const shareText = `Join our ${trip.name} trip on TripEx so we can split costs: ${link}`;
+  const who = (id: string) => esc(name.get(id) ?? "someone who left");
 
+  // Owner: a checkbox on each line records that payment. Everyone else just reads the list.
+  const payBox = (t: { from: string; to: string; amountCents: number }) =>
+    owner
+      ? `<form class="paybox" method="post" action="/t/${trip.code}/settle/pay?${q(trip)}"><input type="hidden" name="from" value="${esc(t.from)}"><input type="hidden" name="to" value="${esc(t.to)}"><input type="hidden" name="amount" value="${t.amountCents}"><label><input type="checkbox" onchange="this.form.submit()" aria-label="Mark ${who(t.from)} paid ${who(t.to)} ${usd(t.amountCents)}"><span class="paylabel">Paid</span></label><noscript><button type="submit" class="button small">Mark paid</button></noscript></form>`
+      : "";
   const settleHtml = transfers.length
     ? `<ol class="settle">${transfers
         .map(
           (t) =>
-            `<li><span class="who">${esc(name.get(t.from) ?? "?")}</span> <span class="verb">pays</span> <span class="who">${esc(
-              name.get(t.to) ?? "?",
-            )}</span> <span class="amt">${usd(t.amountCents)}</span></li>`,
+            `<li><span class="who">${who(t.from)}</span> <span class="verb">pays</span> <span class="who">${who(t.to)}</span> <span class="amt">${usd(t.amountCents)}</span>${payBox(t)}</li>`,
         )
         .join("")}</ol>`
-    : `<p class="even">${expenses.length ? "Everyone is even. Nothing to settle." : "Nothing to settle yet."}</p>`;
+    : `<p class="even">${payments.length ? "Everyone is settled up." : expenses.length ? "Everyone is even. Nothing to settle." : "Nothing to settle yet."}</p>`;
+  const paidHtml = payments.length
+    ? `<h3 class="paid-title">Paid</h3><ul class="paid">${payments
+        .slice()
+        .reverse()
+        .map(
+          (p) => `<li>${
+            owner
+              ? `<form class="paybox" method="post" action="/t/${trip.code}/settle/undo/${p.id}?${q(trip)}"><label><input type="checkbox" checked onchange="if (confirm('Undo this payment? It goes back to settle up.')) this.form.submit(); else this.checked = true" aria-label="Undo: ${who(p.from_id)} paid ${who(p.to_id)} ${usd(p.amount_cents)}"></label><noscript><button type="submit" class="button small">Undo</button></noscript></form>`
+              : `<span class="tick" aria-hidden="true">✓</span>`
+          }<span>${who(p.from_id)} paid ${who(p.to_id)} <strong>${usd(p.amount_cents)}</strong></span><span class="pdate">${shortDate(p.created_at)}</span></li>`,
+        )
+        .join("")}</ul>`
+    : "";
 
+  const sent = new Map<string, number>(), got = new Map<string, number>();
+  for (const p of payments) {
+    sent.set(p.from_id, (sent.get(p.from_id) ?? 0) + p.amount_cents);
+    got.set(p.to_id, (got.get(p.to_id) ?? 0) + p.amount_cents);
+  }
   const peopleHtml = members
     .map((m) => {
       const t = totals.get(m.phone) ?? { paid: 0, share: 0 };
@@ -185,7 +208,7 @@ export function tripPage(store: Store, trip: Trip, me: User, base?: string, rs: 
         }</div>
         <div class="pstatus">${status}</div>
         <div class="bar" aria-hidden="true"><span style="width:${pct}%"></span></div>
-        <div class="pmeta">Paid ${usd(t.paid)}, share ${usd(t.share)}</div>
+        <div class="pmeta">Paid ${usd(t.paid)}, share ${usd(t.share)}${sent.get(m.phone) ? `, paid back ${usd(sent.get(m.phone)!)}` : ""}${got.get(m.phone) ? `, received ${usd(got.get(m.phone)!)}` : ""}</div>
       </li>`;
     })
     .join("");
@@ -223,9 +246,12 @@ export function tripPage(store: Store, trip: Trip, me: User, base?: string, rs: 
     ${passwordBlock(trip, rs)}
     ${inboxBlock(store, trip, name)}
 
-    <section aria-labelledby="h-settle">
+    <section aria-labelledby="h-settle" id="settle">
       <h2 id="h-settle">Settle up</h2>
+      ${settleMessage ? `<p class="hint" role="status">${esc(settleMessage)}</p>` : ""}
       ${settleHtml}
+      ${owner && transfers.length ? `<p class="hint">Check a line once that payment has been made.</p>` : ""}
+      ${paidHtml}
     </section>
 
     <section aria-labelledby="h-people" id="people">
@@ -411,13 +437,13 @@ export function editPage(store: Store, trip: Trip, e: Expense, error?: string, r
 }
 
 /** Trip owner only: confirm removing someone. The one place an email is shown, so the owner knows who it is. */
-export function removePage(trip: Trip, person: User, savedCount: number): string {
+export function removePage(trip: Trip, person: User, blocker?: string): string {
   const back = `/t/${trip.code}?${q(trip)}#people`;
   const email = person.email
     ? `<p class="hint">Email on file</p><p class="confirm-email">${esc(person.email)}</p>`
     : `<p class="confirm-email">No email on file for ${esc(person.name)}.</p><p class="hint">They were added from an expense and haven't opened the trip link yet.</p>`;
-  const body = savedCount
-    ? `<p class="error" role="alert">${esc(person.name)} is on ${savedCount} saved ${savedCount === 1 ? "expense" : "expenses"}. Edit or delete ${savedCount === 1 ? "it" : "those"} first so balances stay right, then remove them.</p>
+  const body = blocker
+    ? `<p class="error" role="alert">${esc(blocker)}</p>
        <p><a class="button" href="${back}">Back to the trip</a></p>`
     : `<p class="hint">They'll be signed out and lose access. Unsaved drafts they paid for are discarded, and emails from them will be ignored.</p>
        <form method="post" action="/t/${trip.code}/people/${encodeURIComponent(person.phone)}/remove?${q(trip)}">
@@ -515,6 +541,19 @@ legend{font-weight:600;font-size:.95rem;margin-bottom:6px}
 .settle li:last-child{border-bottom:1px solid var(--rule)}
 .settle .verb{color:var(--muted)}
 .settle .amt{margin-left:auto;font-weight:700;color:var(--down);font-family:var(--text);font-size:.85em}
+.settle li{position:relative}
+.paybox{margin:0;display:inline-flex;align-items:center}
+.settle .paybox{order:-1;margin-right:.4em;align-self:center}
+.paybox label{display:inline-flex;align-items:center;gap:6px;font:500 .8rem/1 var(--text);color:var(--muted);cursor:pointer}
+.paybox input[type=checkbox]{width:22px;height:22px}
+.settle .paylabel{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+.paid-title{margin:20px 0 6px;font:600 .95rem/1.2 var(--text);color:var(--muted)}
+.paid{list-style:none;margin:0;padding:0}
+.paid li{display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--rule);color:var(--muted);font-size:.95rem}
+.paid li:last-child{border-bottom:1px solid var(--rule)}
+.paid strong{color:var(--ink)}
+.paid .tick{color:var(--up);font-weight:700;width:22px;text-align:center}
+.paid .pdate{margin-left:auto;font-size:.85rem}
 .even{font:500 1.35rem/1.3 var(--display);margin:0}
 
 .people,.expenses{list-style:none;margin:0;padding:0}

@@ -22,9 +22,9 @@ TripEx runs as a single Node server with a SQLite database. Friends need no acco
 3. **Join.** A friend opens the link and taps their name, or adds themselves with name and email. Tapping a name always asks for that person's email: saved the first time, and it must match after that. The creator also needs the receipt password.
 4. **Add.** Type an expense (`dinner 142 skip Raj`), upload a receipt photo or PDF, or email the trip's own address.
 5. **Check.** Each draft opens on a review form: description, amount, who paid, who's in, and share weights. Save, discard, or later edit and delete.
-6. **Settle.** The trip page shows totals, each person's balance bar, and the fewest transfers to square up.
+6. **Settle.** The trip page shows totals, each person's balance bar, and the fewest transfers to square up. The trip owner checks a transfer once it's paid; it's recorded as a payment, balances update, and it moves to a Paid list where unchecking undoes it.
 7. **Unlock receipts.** Receipt files open only for the creator and for people who enter the trip's receipt password on their device.
-8. **Remove someone.** The trip owner can remove anyone but themselves, after a confirmation page that shows that person's email or says there's none on file. It's blocked while that person is on a saved expense, so balances never change silently. Unsaved drafts they paid for are discarded, they're dropped from other drafts, their devices are signed out, and their email can't rejoin or re-add them by emailing the trip.
+8. **Remove someone.** The trip owner can remove anyone but themselves, after a confirmation page that shows that person's email or says there's none on file. It's blocked while that person is on a saved expense, so balances never change silently; the same goes for a recorded payment. Unsaved drafts they paid for are discarded, they're dropped from other drafts, their devices are signed out, and their email can't rejoin or re-add them by emailing the trip.
 9. **Export.** The trip owner downloads a .zip: `trip.json` (versioned, built for a future import), `expenses.csv`, `people.csv`, `settle-up.csv`, a plain-text summary, and every receipt file. See [EXPORT.md](EXPORT.md).
 
 ## Architecture
@@ -114,10 +114,11 @@ SQLite via Node's built-in `node:sqlite`. Money is stored in integer cents. A mi
 | expenses | payer, amount_cents, description, source, status, items, receipt_file, note, created_by | Source: text, receipt, email. Status: pending, confirmed, cancelled, deleted |
 | shares | expense_id, user id, weight | Weight 0 means sat out; 2 means covering two people |
 | settings | key, value | Holds the cookie-signing secret and when signed cookies started |
+| payments | trip_id, from_id, to_id, amount_cents, marked_by | Settle-up payments marked as made; counted in balances |
 | removed_emails | trip_id, email | People the owner removed; their emails are ignored and can't rejoin |
 
 - **Splits:** weighted, with largest-remainder rounding so shares always add up to the exact cent total.
-- **Settle-up:** net balances, then a greedy match of biggest debtor to biggest creditor for the fewest transfers.
+- **Settle-up:** net balances (expenses plus recorded payments), then a greedy match of biggest debtor to biggest creditor for the fewest transfers.
 - **Receipt files:** stored on disk under `RECEIPTS_DIR/<trip code>/`, never served statically.
 
 ## Routes
@@ -136,6 +137,8 @@ All trip routes need the link key (`?k=`); most also need a signed-in member.
 | POST | `/t/:code/e/:id` | Save, discard or delete | Members |
 | POST | `/t/:code/unlock` | Enter receipt password | Members |
 | POST | `/t/:code/receipt-password` | Pick a new receipt password | Creator |
+| POST | `/t/:code/settle/pay` | Record a settle-up payment as made | Creator |
+| POST | `/t/:code/settle/undo/:id` | Undo a recorded payment | Creator |
 | GET | `/t/:code/export` | Download the trip as a .zip | Creator |
 | GET | `/t/:code/people/:id/remove` | Confirm removal; shows their email | Creator |
 | POST | `/t/:code/people/:id/remove` | Remove someone from the trip | Creator |
@@ -171,7 +174,7 @@ One always-on Fly.io machine (app `tripex-app`, region `iad`) with a 1 GB volume
 - **Deploy:** `bash deploy.sh` installs flyctl if needed, logs in, creates the app and volume, asks for the Anthropic key (hidden), sets secrets and a 6-digit access code, then runs `fly deploy --ha=false`. Safe to re-run; data is kept.
 - **Pages:** server-rendered HTML, no client framework. Bricolage Grotesque and IBM Plex Sans, sage and plum palette, dark mode.
 - **Backups:** Fly volume snapshots (`fly volumes snapshots list`).
-- **Tests:** ledger unit tests (`npm test`) plus end-to-end curl suites run against a real server with stand-ins for Claude and Resend: web flow, Postmark, Resend, people and replies, trip creation, named people, receipt password, removing people, export, and a privacy scan that crawls every page for email addresses. About 230 checks, all passing. The end-to-end suites aren't in this repo yet.
+- **Tests:** ledger unit tests (`npm test`) plus end-to-end curl suites run against a real server with stand-ins for Claude and Resend: web flow, Postmark, Resend, people and replies, trip creation, named people, receipt password, removing people, export, marking payments, and a privacy scan that crawls every page for email addresses. About 260 checks, all passing. The end-to-end suites aren't in this repo yet.
 - **Not yet tested live from the build sandbox:** real Claude responses and real Resend delivery. Those are checked on the deployed app.
 
 | File | Role |
